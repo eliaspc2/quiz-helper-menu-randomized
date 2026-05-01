@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Quiz Helper Menu (RANDOMIZED)
-// @namespace    quiz.helper
-// @version      20.4.1
+// @namespace    https://github.com/eliaspc2/quiz-helper-menu-randomized
+// @version      20.4.2
 // @homepageURL  https://github.com/eliaspc2/quiz-helper-menu-randomized
 // @downloadURL  https://raw.githubusercontent.com/eliaspc2/quiz-helper-menu-randomized/main/quiz-helper-menu-randomized.user.js
 // @updateURL    https://raw.githubusercontent.com/eliaspc2/quiz-helper-menu-randomized/main/quiz-helper-menu-randomized.user.js
