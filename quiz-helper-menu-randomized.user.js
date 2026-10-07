@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Quiz Helper Menu (RANDOMIZED)
 // @namespace    https://github.com/eliaspc2/quiz-helper-menu-randomized
-// @version      20.4.2
+// @version      20.4.4
 // @homepageURL  https://github.com/eliaspc2/quiz-helper-menu-randomized
 // @downloadURL  https://raw.githubusercontent.com/eliaspc2/quiz-helper-menu-randomized/main/quiz-helper-menu-randomized.user.js
 // @updateURL    https://raw.githubusercontent.com/eliaspc2/quiz-helper-menu-randomized/main/quiz-helper-menu-randomized.user.js
@@ -42,7 +42,6 @@
     fillNavigate: [800, 2200],
     backToStart: [1200, 3200],
     finishPage: [2500, 6000],
-    readNavigate: [900, 2600],
     answerNavigateFallback: [3000, 9000],
     chooseToSubmitFallback: [25000, 65000],
     finishFallback: [35000, 90000],
@@ -107,11 +106,6 @@
       el.scrollIntoView({ block: "center" });
     } catch {}
     el.click();
-  }
-
-  function delayedClick(el, range) {
-    if (!el) return;
-    later(range, () => click(el));
   }
 
   function delayedClickMs(el, ms) {
@@ -543,19 +537,6 @@
     return Math.round(clampDelay(raw, minMs, maxMs));
   }
 
-  function navigationDelayMs(phase = "submit") {
-    const quick = quickModeEnabled();
-    const readLike = phase === "fill" || phase === "read";
-    const budget = questionTimingBudgetMs(phase);
-    const share = readLike ? (quick ? 0.12 : 0.18) : (quick ? 0.08 : 0.12);
-    const jitter = quick ? 0.75 + Math.random() * 0.25 : 0.8 + Math.random() * 0.35;
-    const raw = budget * share * jitter;
-    const minMs = readLike ? (quick ? 60 : 250) : (quick ? 100 : 600);
-    const maxMs = readLike ? (quick ? 800 : 2200) : (quick ? 1800 : 4500);
-
-    return Math.round(clampDelay(raw, minMs, maxMs));
-  }
-
   function confirmSubmitDelayMs() {
     const quick = quickModeEnabled();
     const budget = questionTimingBudgetMs("submit");
@@ -636,7 +617,7 @@
 
     const btn = questionNavButtons()[0];
     if (btn) {
-      delayedClickMs(btn, navigationDelayMs(phase));
+      click(btn);
       return false;
     }
 
@@ -766,7 +747,7 @@
 
     const next = findBtn(/seguinte|next/i);
     if (next) {
-      delayedClickMs(next, navigationDelayMs("fill"));
+      click(next);
       return;
     }
 
@@ -805,7 +786,7 @@
 
     const next = findBtn(/seguinte|next/i);
     if (next) {
-      delayedClickMs(next, navigationDelayMs("submit"));
+      click(next);
       return;
     }
 
@@ -848,7 +829,7 @@
 
     const next = findBtn(/seguinte|next/i);
     if (next) {
-      delayedClick(next, DELAY.readNavigate);
+      click(next);
       return;
     }
 
