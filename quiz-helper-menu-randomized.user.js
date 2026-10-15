@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Quiz Helper Menu (RANDOMIZED)
 // @namespace    https://github.com/eliaspc2/quiz-helper-menu-randomized
-// @version      20.4.4
+// @version      20.4.5
 // @homepageURL  https://github.com/eliaspc2/quiz-helper-menu-randomized
 // @downloadURL  https://raw.githubusercontent.com/eliaspc2/quiz-helper-menu-randomized/main/quiz-helper-menu-randomized.user.js
 // @updateURL    https://raw.githubusercontent.com/eliaspc2/quiz-helper-menu-randomized/main/quiz-helper-menu-randomized.user.js
@@ -32,20 +32,10 @@
   const KSTART = "quiz_started";
   const KPLAN = "quiz_submission_timing_plan";
 
-  const STATE_KEYS = [KDATA, KRUN, KA, KS, KARUN, KPHASE, KFAST, KDURATION, KSTART, KPLAN];
+  const STATE_KEYS = [KDATA, KRUN, KA, KS, KARUN, KPHASE, KSTART, KPLAN];
 
   const DELAY = {
     autoRead: [700, 2200],
-    autoFill: [700, 2000],
-    autoAnswer: [2500, 8000],
-    confirmSubmit: [900, 2200],
-    fillNavigate: [800, 2200],
-    backToStart: [1200, 3200],
-    finishPage: [2500, 6000],
-    answerNavigateFallback: [3000, 9000],
-    chooseToSubmitFallback: [25000, 65000],
-    finishFallback: [35000, 90000],
-    totalSubmission: [5 * 60 * 1000, 10 * 60 * 1000],
   };
 
   const FINAL_TEXT_RE =
@@ -481,76 +471,6 @@
     return "";
   }
 
-  function countWords(text) {
-    return String(text || "")
-      .split(/\s+/)
-      .filter(Boolean)
-      .length;
-  }
-
-  function questionCountEstimate() {
-    const navCount = document.querySelectorAll(".qnbutton").length;
-    const questionCount = document.querySelectorAll(".que").length;
-    return Math.max(navCount, questionCount, 1);
-  }
-
-  function currentQuestion() {
-    return document.querySelector(".que");
-  }
-
-  function questionReadingText(q) {
-    return [
-      textOf(q.querySelector(".qtext")),
-      ...radios(q).map(optionTextFromInput),
-    ]
-      .filter(Boolean)
-      .join(" ");
-  }
-
-  function clampDelay(value, min, max) {
-    return Math.max(min, Math.min(max, value));
-  }
-
-  function questionTimingBudgetMs(phase = "submit") {
-    const totalMs = procedureMinutes() * 60 * 1000;
-    const quick = quickModeEnabled();
-    const count = questionCountEstimate();
-    const readLike = phase === "fill" || phase === "read";
-    const fillShare = quick ? 0.14 : 0.22;
-    const submitShare = quick ? 0.86 : 0.78;
-
-    return (totalMs / count) * (readLike ? fillShare : submitShare);
-  }
-
-  function readingDelayMs(phase = "submit") {
-    const question = currentQuestion();
-    const quick = quickModeEnabled();
-    const budget = questionTimingBudgetMs(phase);
-    const words = countWords(questionReadingText(question)) || (phase === "submit" ? 18 : 10);
-    const divisor = phase === "submit" ? (quick ? 18 : 14) : (quick ? 10 : 8);
-    const wordFactor = clamp(words / divisor, 0.65, phase === "submit" ? 1.85 : 1.35);
-    const jitter = quick ? 0.82 + Math.random() * 0.3 : 0.88 + Math.random() * 0.36;
-    const raw = budget * wordFactor * jitter;
-    const minMs = phase === "submit" ? (quick ? 400 : 900) : (quick ? 80 : 180);
-    const maxMs = phase === "submit" ? (quick ? Math.max(budget * 1.4, 3500) : Math.max(budget * 1.6, 9000)) : (quick ? 900 : 5000);
-
-    return Math.round(clampDelay(raw, minMs, maxMs));
-  }
-
-  function confirmSubmitDelayMs() {
-    const quick = quickModeEnabled();
-    const budget = questionTimingBudgetMs("submit");
-    const raw = budget * (quick ? 0.025 : 0.05) * (quick ? 0.8 + Math.random() * 0.3 : 0.85 + Math.random() * 0.35);
-    return Math.round(clampDelay(raw, quick ? 120 : 650, quick ? 1400 : 3500));
-  }
-
-  function finishDelayMs() {
-    const quick = quickModeEnabled();
-    const budget = questionTimingBudgetMs("submit");
-    const raw = budget * (quick ? 0.04 : 0.08) * (quick ? 0.75 + Math.random() * 0.25 : 0.8 + Math.random() * 0.3);
-    return Math.round(clampDelay(raw, quick ? 250 : 900, quick ? 2200 : 5000));
-  }
-
   // ======================
   // DETECAO FINAL
   // ======================
@@ -633,95 +553,99 @@
       .sort((a, b) => Number(a.replace(/\D/g, "")) - Number(b.replace(/\D/g, "")));
   }
 
-  function distributeBudget(totalMs, count, minMs, maxMs) {
+  function distributeBudget(totalMs, count) {
     if (count <= 0) return [];
 
+    // Normalized weights vary each question without changing the total budget.
     const weights = Array.from({ length: count }, () => 0.7 + Math.random() * 0.6);
     const totalWeight = weights.reduce((sum, value) => sum + value, 0);
+    let cumulativeWeight = 0;
+    let allocated = 0;
 
     return weights.map((weight) => {
-      const value = totalMs * (weight / totalWeight);
-      return Math.round(Math.max(minMs, Math.min(maxMs, value)));
+      cumulativeWeight += weight;
+      const cumulativeMs = Math.round(totalMs * cumulativeWeight / totalWeight);
+      const delay = cumulativeMs - allocated;
+      allocated = cumulativeMs;
+      return delay;
     });
   }
 
   function createTimingPlan(r) {
     const keys = answerKeys(r);
-    const totalMs = randomMs(DELAY.totalSubmission);
-    const finishDelay = randomMs(DELAY.finishFallback);
-    const remainingBudget = Math.max(keys.length * 10000, totalMs - finishDelay);
-    const answerBudget = Math.round(remainingBudget * 0.85);
-    const navBudget = Math.max(keys.length * 3000, remainingBudget - answerBudget);
+    const totalMs = procedureMinutes() * 60 * 1000;
+    const fillShare = quickModeEnabled() ? 0.14 : 0.22;
+    const finishDelay = Math.round(totalMs * 0.01);
+    const fillBudget = Math.round((totalMs - finishDelay) * fillShare);
+    const submitBudget = totalMs - finishDelay - fillBudget;
+    const fillDelays = distributeBudget(fillBudget, keys.length);
+    const submitDelays = distributeBudget(submitBudget, keys.length);
+    const questions = {};
+
+    keys.forEach((key, index) => {
+      const confirmDelay = Math.round(submitDelays[index] * 0.03);
+      questions[key] = {
+        fill: fillDelays[index],
+        submit: submitDelays[index] - confirmDelay,
+        confirm: confirmDelay,
+      };
+    });
 
     const plan = {
+      version: 2,
       createdAt: Date.now(),
       targetTotalMs: totalMs,
-      answerKeys: keys,
-      answerDelays: distributeBudget(answerBudget, keys.length, 10000, 240000),
-      answerIndex: 0,
-      navDelays: distributeBudget(navBudget, Math.max(keys.length, 1), 3000, 20000),
-      navIndex: 0,
-      usedQuestions: {},
+      questions,
       finishDelay,
+      waits: {},
     };
 
     set(KPLAN, plan);
-    console.log(
-      "[QuizHelper] plano de submissao:",
-      Math.round(totalMs / 60000),
-      "minutos para",
-      keys.length,
-      "respostas"
-    );
     return plan;
   }
 
   function timingPlan(r) {
-    return get(KPLAN, null) || createTimingPlan(r);
+    const plan = get(KPLAN, null);
+    return plan?.version === 2 ? plan : createTimingPlan(r);
   }
 
-  function nextAnswerDelay(k, r) {
+  function remainingWaitMs(id, delay, r) {
     const plan = timingPlan(r);
-
-    if (plan.usedQuestions?.[k]) {
-      return randomMs(DELAY.chooseToSubmitFallback);
+    if (plan.waits[id] === undefined) {
+      plan.waits[id] = Date.now() + delay;
+      set(KPLAN, plan);
     }
-
-    const index = Math.min(plan.answerIndex || 0, plan.answerDelays.length - 1);
-    const delay = plan.answerDelays[index] || randomMs(DELAY.chooseToSubmitFallback);
-
-    plan.answerIndex = index + 1;
-    plan.usedQuestions = plan.usedQuestions || {};
-    plan.usedQuestions[k] = delay;
-    set(KPLAN, plan);
-
-    return delay;
+    return Math.max(0, plan.waits[id] - Date.now());
   }
 
-  function finishDelay(r) {
+  function scheduleAnswerStep(r) {
+    const phase = answerPhase();
+    if (!goTo1(phase)) return;
     const plan = timingPlan(r);
-    return plan.finishDelay || randomMs(DELAY.finishFallback);
-  }
-
-  function nextNavigateDelay(r) {
-    const plan = timingPlan(r);
-    const index = Math.min(plan.navIndex || 0, plan.navDelays.length - 1);
-    const delay = plan.navDelays[index] || randomMs(DELAY.answerNavigateFallback);
-
-    plan.navIndex = index + 1;
-    set(KPLAN, plan);
-
-    return delay;
+    const done = get(KS, {});
+    const keys = [...document.querySelectorAll(".que")]
+      .filter((q) => {
+        const key = qKey(q);
+        const index = String(r[key] || "").toLowerCase().charCodeAt(0) - 97;
+        return plan.questions[key] && radios(q)[index]
+          && (phase === "fill" || (!done[key] && submitBtn(q)));
+      })
+      .map(qKey);
+    // Fill handles a whole page; submit handles one question at a time.
+    const pending = phase === "fill" ? keys : keys.slice(0, 1);
+    const delay = pending.reduce((sum, key) => sum + plan.questions[key][phase], 0);
+    const wait = pending.length
+      ? remainingWaitMs(`${phase}:${pending.join(",")}`, delay, r)
+      : 0;
+    scheduleResponderMs(wait);
   }
 
   function switchToSubmitPhase(r) {
     setAnswerPhase("submit");
     localStorage.removeItem(KSTART);
-    localStorage.removeItem(KPLAN);
-
     if (!goTo1("submit")) return;
 
-    scheduleResponderMs(readingDelayMs("submit"));
+    scheduleAnswerStep(r);
   }
 
   function fillAnswers(r) {
@@ -774,11 +698,11 @@
         click(rds[idx]);
       }
 
-      laterMs(confirmSubmitDelayMs(), () => {
+      laterMs(remainingWaitMs(`confirm:${k}`, timingPlan(r).questions[k].confirm, r), () => {
         done[k] = true;
         set(KS, done);
         click(btn);
-        scheduleResponderMs(readingDelayMs("submit"));
+        scheduleAnswerStep(r);
       });
 
       return;
@@ -792,7 +716,7 @@
 
     const finish = findBtn(FINISH_BUTTON_RE);
     if (finish) {
-      delayedClickMs(finish, finishDelayMs());
+      delayedClickMs(finish, remainingWaitMs("finish", timingPlan(r).finishDelay, r));
       return;
     }
 
@@ -959,7 +883,7 @@
 
     const rangeLabel = document.createElement("span");
     rangeLabel.className = "qh-label";
-    rangeLabel.textContent = "Duracao";
+    rangeLabel.textContent = "Duracao total aproximada";
 
     const rangeValue = document.createElement("span");
     rangeValue.className = "qh-value";
@@ -1010,6 +934,7 @@
         set(KA, r);
       }
 
+      createTimingPlan(r);
       localStorage.removeItem(KS);
       localStorage.removeItem(KPHASE);
       localStorage.removeItem(KSTART);
@@ -1017,7 +942,7 @@
       setAnswerPhase("fill");
       keepAwake();
 
-      scheduleResponderMs(readingDelayMs("fill"));
+      scheduleAnswerStep(r);
     }, "qh-btn--primary"));
 
     actions.appendChild(mk("Avancar ja", () => {
@@ -1080,7 +1005,7 @@
 
     if (localStorage.getItem(KARUN) === "1") {
       keepAwake();
-      scheduleResponderMs(readingDelayMs(answerPhase()));
+      scheduleAnswerStep(get(KA, {}));
     }
   }
 
